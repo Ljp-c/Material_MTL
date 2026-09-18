@@ -1,0 +1,21 @@
+# Python 虚拟环境
+crystal_env/
+
+# 数据文件（体积过大，不随仓库分发；保留数据说明文档）
+模型具体训练/data/*
+!模型具体训练/data/README.md
+!模型具体训练/data/README_详细版.md
+!模型具体训练/data/数据总览.json
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# opencode 依赖（配置保留）
+.opencode/node_modules/
+
+# 临时文件
+*.tmp
+*.log

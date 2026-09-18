@@ -1,0 +1,275 @@
+{
+  "generated_utc": "2026-09-18T16:56:03+00:00",
+  "data_root": "E:\\Material_MTL\\模型具体训练\\data",
+  "datasets": {
+    "BaTiO3_介电": {
+      "size_mb": 0.0,
+      "files": {
+        "cache/": {
+          "dir_size_mb": 0.0
+        },
+        "dielectric.csv": {
+          "size_mb": 0.0,
+          "rows": 5
+        },
+        "dielectric.parquet": {
+          "size_mb": 0.01
+        }
+      }
+    },
+    "BaTiO3_弹性": {
+      "size_mb": 0.3,
+      "files": {
+        "cache/": {
+          "dir_size_mb": 0.2
+        },
+        "elasticity.csv": {
+          "size_mb": 0.0,
+          "rows": 15
+        },
+        "elasticity.parquet": {
+          "size_mb": 0.02
+        }
+      }
+    },
+    "BaTiO3_热力学": {
+      "size_mb": 3.6,
+      "files": {
+        "cache/": {
+          "dir_size_mb": 3.5
+        },
+        "thermo.csv": {
+          "size_mb": 0.1,
+          "rows": 325
+        },
+        "thermo.parquet": {
+          "size_mb": 0.04
+        }
+      }
+    },
+    "BaTiO3_磁性": {
+      "size_mb": 0.3,
+      "files": {
+        "cache/": {
+          "dir_size_mb": 0.3
+        },
+        "magnetism.csv": {
+          "size_mb": 0.06,
+          "rows": 153
+        },
+        "magnetism.parquet": {
+          "size_mb": 0.03
+        }
+      }
+    },
+    "BaTiO3_结构_形成能_带隙_稳定性": {
+      "size_mb": 3.8,
+      "files": {
+        "cache/": {
+          "dir_size_mb": 1.9
+        },
+        "dataset_meta.json": {
+          "size_mb": 0.0
+        },
+        "materials.csv": {
+          "size_mb": 0.03,
+          "rows": 153
+        },
+        "materials.parquet": {
+          "size_mb": 0.02
+        },
+        "structures.jsonl": {
+          "size_mb": 1.07
+        },
+        "structures.pkl": {
+          "size_mb": 0.78
+        }
+      }
+    },
+    "BaTiO3掺杂_结构_形成能_凸包能量": {
+      "size_mb": 3.4,
+      "files": {
+        "audit.json": {
+          "size_mb": 0.0
+        },
+        "BaTiO3_doped_multi(rough).pkl": {
+          "size_mb": 1.32
+        },
+        "BaTiO3_doped_multi.csv": {
+          "size_mb": 0.0,
+          "rows": 8
+        },
+        "BaTiO3_doped_multi.parquet": {
+          "size_mb": 0.0
+        },
+        "BaTiO3_doped_multi.pkl": {
+          "size_mb": 0.03
+        },
+        "BaTiO3_doped_multi_rough.csv": {
+          "size_mb": 0.02,
+          "rows": 252
+        },
+        "BaTiO3_doped_multi_rough.parquet": {
+          "size_mb": 0.02
+        },
+        "BaTiO3_doped_multi_rough_structure_index.csv": {
+          "size_mb": 0.05,
+          "rows": 252
+        },
+        "BaTiO3_doped_multi_rough_structure_index.parquet": {
+          "size_mb": 0.03
+        },
+        "BaTiO3_doped_multi_rough_structures.jsonl": {
+          "size_mb": 1.82
+        },
+        "BaTiO3_doped_multi_structure_index.csv": {
+          "size_mb": 0.0,
+          "rows": 8
+        },
+        "BaTiO3_doped_multi_structure_index.parquet": {
+          "size_mb": 0.01
+        },
+        "BaTiO3_doped_multi_structures.jsonl": {
+          "size_mb": 0.04
+        },
+        "export_summary.json": {
+          "size_mb": 0.0
+        }
+      }
+    },
+    "全库_介电": {
+      "size_mb": 41.3,
+      "files": {
+        "dielectric_dataset.pkl": {
+          "size_mb": 22.66
+        },
+        "dielectric_labels.csv": {
+          "size_mb": 1.02,
+          "rows": 7332
+        },
+        "structures.pkl": {
+          "size_mb": 17.64
+        }
+      }
+    },
+    "全库_带边": {
+      "size_mb": 99.7,
+      "files": {
+        "band_edges.csv": {
+          "size_mb": 11.69,
+          "rows": 153573
+        },
+        "band_edges.parquet": {
+          "size_mb": 4.85
+        },
+        "band_edges_meta.json": {
+          "size_mb": 0.0
+        },
+        "cache/": {
+          "dir_size_mb": 83.1
+        }
+      }
+    },
+    "全库_形成能与带隙": {
+      "size_mb": 3262.2,
+      "files": {
+        "cache/": {
+          "dir_size_mb": 1356.2
+        },
+        "dataset_meta.json": {
+          "size_mb": 0.0
+        },
+        "materials.csv": {
+          "size_mb": 60.05,
+          "rows": 153877
+        },
+        "materials.parquet": {
+          "size_mb": 16.21
+        },
+        "structures.jsonl": {
+          "size_mb": 1001.13
+        },
+        "原始快照_summary_2025-09-25/": {
+          "dir_size_mb": 828.6
+        }
+      }
+    },
+    "全库_空位形成能": {
+      "size_mb": 2762.6,
+      "files": {
+        "2D_layers.db": {
+          "size_mb": 25.74
+        },
+        "2D_layers.json": {
+          "size_mb": 9.72
+        },
+        "README.txt": {
+          "size_mb": 0.0
+        },
+        "Vacancies.db": {
+          "size_mb": 2349.0
+        },
+        "Vacancies.json": {
+          "size_mb": 378.09
+        }
+      }
+    },
+    "氧空位形成能_ABO3": {
+      "size_mb": 1.4,
+      "files": {
+        "figshare_5334142.zip": {
+          "size_mb": 0.68
+        },
+        "High-throughput DFT calculations of formation energy, stability and oxygen vacancy formation energy of ABO3 perovskites.csv": {
+          "size_mb": 0.68,
+          "rows": 5329
+        }
+      }
+    },
+    "铁电材料_极化": {
+      "size_mb": 31.7,
+      "files": {
+        "audit.json": {
+          "size_mb": 0.0
+        },
+        "cif/": {
+          "dir_size_mb": 5.4
+        },
+        "labels.csv": {
+          "size_mb": 0.1,
+          "rows": 641
+        },
+        "labels_unified.csv": {
+          "size_mb": 0.14,
+          "rows": 641
+        },
+        "labels_unified.parquet": {
+          "size_mb": 0.06
+        },
+        "records.jsonl": {
+          "size_mb": 0.57
+        },
+        "records_fields.csv": {
+          "size_mb": 0.11,
+          "rows": 641
+        },
+        "records_fields.parquet": {
+          "size_mb": 0.08
+        },
+        "structure_index.csv": {
+          "size_mb": 0.66,
+          "rows": 2408
+        },
+        "structure_index.parquet": {
+          "size_mb": 0.19
+        },
+        "structures.jsonl": {
+          "size_mb": 14.74
+        },
+        "structures.pkl": {
+          "size_mb": 9.61
+        }
+      }
+    }
+  }
+}
