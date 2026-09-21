@@ -166,7 +166,7 @@ def main():
     parser.add_argument("--collection", default="summary",
                         help="summary / dielectric / magnetism / electronic-structure / thermo 等")
     parser.add_argument("--version", default="auto", help="如 2025-09-25；auto=最新")
-    parser.add_argument("--out", default=str(Path(__file__).resolve().parent / "data" / "mp_full"))
+    parser.add_argument("--out", default=str(Path(__file__).resolve().parents[1] / "data" / "mp_full"))
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--list-versions", action="store_true")
     parser.add_argument("--list-only", action="store_true")

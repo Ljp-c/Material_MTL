@@ -28,7 +28,7 @@ from tqdm import tqdm
 
 from pymatgen.core import Composition
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 FERRO_DIR = DATA_DIR / "铁电材料_极化"
 BTO_DIR = DATA_DIR / "BaTiO3掺杂_结构_形成能_凸包能量"

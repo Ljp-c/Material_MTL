@@ -84,7 +84,7 @@ def download(url, dest, total, retries=4):
 def main():
     parser = argparse.ArgumentParser(description="下载 Zenodo 空位筛选数据集")
     parser.add_argument("--record", default="15025795")
-    parser.add_argument("--out", default=str(Path(__file__).resolve().parent / "data" / "全库_空位形成能"))
+    parser.add_argument("--out", default=str(Path(__file__).resolve().parents[1] / "data" / "全库_空位形成能"))
     args = parser.parse_args()
 
     out_dir = Path(args.out)

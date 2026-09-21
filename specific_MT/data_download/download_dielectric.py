@@ -123,7 +123,7 @@ def fetch_structures(ids, out_pkl: Path, chunk_size: int = 400,
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="下载 MP DFPT 介电数据集 + 结构")
-    default_out = Path(__file__).resolve().parent / "data" / "全库_介电"
+    default_out = Path(__file__).resolve().parents[1] / "data" / "全库_介电"
     parser.add_argument("--out", default=str(default_out), help="输出目录")
     parser.add_argument("--limit", type=int, default=None, help="限制条数（冒烟测试用）")
     parser.add_argument("--chunk-size", type=int, default=400, help="结构拉取分块大小")

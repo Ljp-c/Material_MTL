@@ -276,7 +276,7 @@ def flatten_endpoint(cache_dir, endpoint, prop_dir):
 
 
 def main():
-    here = Path(__file__).resolve().parent
+    here = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description="下载 BaTiO3 全部相关 MP 数据（按性质分目录）")
     parser.add_argument("--root", default=str(here / "data"),
                         help="数据根目录，各性质子目录创建于此")

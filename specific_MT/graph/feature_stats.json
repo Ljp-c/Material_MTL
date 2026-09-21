@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "data": "dielectric",
+  "n_structures": 7327,
+  "n_atoms": 122586,
+  "features": {
+    "electronegativity": {
+      "mean": 2.4903173282430293,
+      "std": 0.9726996894314334,
+      "fill": 2.4903173282430293,
+      "n_valid": 122586,
+      "n_total": 122586,
+      "missing_ratio": 0.0
+    },
+    "ionic_radius": {
+      "mean": 1.0150427024785114,
+      "std": 0.2998959664876774,
+      "fill": 1.0150427024785114,
+      "n_valid": 116535,
+      "n_total": 122586,
+      "missing_ratio": 0.049361264744750666
+    },
+    "valence_electrons": {
+      "mean": 6.78750428270765,
+      "std": 5.386971452648513,
+      "fill": 6.78750428270765,
+      "n_valid": 122586,
+      "n_total": 122586,
+      "missing_ratio": 0.0
+    },
+    "oxidation_state": {
+      "mean": 0.0,
+      "std": 2.3737557255113892,
+      "fill": 0.0,
+      "n_valid": 112685,
+      "n_total": 122586,
+      "missing_ratio": 0.08076778751244029
+    }
+  }
+}

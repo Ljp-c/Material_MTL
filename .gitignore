@@ -3,9 +3,23 @@ crystal_env/
 
 # 数据文件（体积过大，不随仓库分发；保留数据说明文档）
 模型具体训练/data/*
+specific_MT/data/*
 !模型具体训练/data/README.md
 !模型具体训练/data/README_详细版.md
 !模型具体训练/data/数据总览.json
+!specific_MT/data/README.md
+!specific_MT/data/README_详细版.md
+!specific_MT/data/数据总览.json
+
+# 派生图数据（数十 GB）
+specific_MT/graph/*
+!specific_MT/graph/feature_stats.json
+
+# 训练产物
+specific_MT/runs/
+specific_MT/logs/
+specific_MT/checkpoints/
+specific_MT/outputs/
 
 # Python 缓存
 __pycache__/

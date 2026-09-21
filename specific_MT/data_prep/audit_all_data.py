@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-DATA = Path(__file__).resolve().parent / "data"
+DATA = Path(__file__).resolve().parents[1] / "data"
 
 
 def count_csv(path):

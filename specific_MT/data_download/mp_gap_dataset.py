@@ -456,7 +456,7 @@ def export_all(df, structures, out_dir, meta):
 
 def main():
     parser = argparse.ArgumentParser(description="MP 带隙+稳定性数据集构建")
-    here = Path(__file__).resolve().parent
+    here = Path(__file__).resolve().parents[1]
     parser.add_argument("--out", default=str(here / "data" / "全库_形成能与带隙"))
     parser.add_argument("--chemsys", default=None, help="逗号分隔的化学体系，如 'Ba-O-Ti,Ba-Nb-O-Ti'")
     parser.add_argument("--batio3", action="store_true", help="只下载 BaTiO3 掺杂家族（31 个体系）")

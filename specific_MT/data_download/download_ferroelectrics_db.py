@@ -199,7 +199,7 @@ def download_project(contribs, project: str, outdir: Path, limit=None,
 
 
 def main() -> int:
-    here = Path(__file__).resolve().parent
+    here = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description="下载 MPContribs 铁电数据库")
     parser.add_argument("--out", default=str(here / "data" / "铁电材料_极化"))
     parser.add_argument("--projects", nargs="*", default=PROJECTS)
