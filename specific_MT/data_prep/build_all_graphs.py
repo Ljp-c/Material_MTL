@@ -26,12 +26,14 @@ import json
 import os
 import pickle
 import shutil
+import sqlite3
 import time
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
-from pymatgen.core import Structure
+from pymatgen.core import Element, Lattice, Structure
 from tqdm import tqdm
 
 from build_graphs import (GraphBuilder, OxidationResolver, SCALAR_COLUMNS, X_LAYOUT,
@@ -104,6 +106,15 @@ SOURCES = {
         "label": "formation_energy_per_atom",
         "group": "formula",
         "desc": "BaTiO3 掺杂（La/Nd/Sr 等）形成能/凸包能 260 条",
+    },
+    "vacancy_screening": {
+        "kind": "ase_db",
+        "file": "data/full_db_vacancy_formation_energy/Vacancies.db",
+        "targets": ("formation_energy_per_atom", "energy_per_atom", "E_mace", "ehull",
+                    "mp_gap", "stable", "theoretical"),
+        "label": "formation_energy_per_atom",
+        "group": "formula",
+        "desc": "全库 MLIP 空位筛选 153234 条（ASE db；结构=原胞平均 42.5 原子；标签=材料级形成能/E_mace/ehull/带隙/稳定性，注意 db 内不含空位形成能）",
     },
 }
 
@@ -214,6 +225,35 @@ def _iter_raw(name, cfg, limit=None):
                 continue
             row["nsites"] = len(st)
             yield str(row["material_id"]), st, row
+    elif cfg["kind"] == "ase_db":
+        con = sqlite3.connect(f"file:{ROOT / cfg['file']}?mode=ro", uri=True)
+        wanted = set(cfg["targets"])
+        labels = {}
+        for sid, key, value in con.execute("SELECT id, key, value FROM number_key_values"):
+            if key in wanted:
+                labels.setdefault(sid, {})[key] = value
+        meta = {}
+        for sid, key, value in con.execute(
+                "SELECT id, key, value FROM text_key_values WHERE key IN ('mpid', 'formula_sc')"):
+            meta.setdefault(sid, {})[key] = value
+        n = 0
+        for sid, numbers, positions, cell, pbc in con.execute(
+                "SELECT id, numbers, positions, cell, pbc FROM systems"):
+            z = np.frombuffer(numbers, dtype=np.int32)
+            xyz = np.frombuffer(positions, dtype=np.float64).reshape(-1, 3)
+            if len(z) == 0 or len(xyz) != len(z):
+                continue
+            symbols = [Element.from_Z(int(zi)).symbol for zi in z]
+            lattice = Lattice(np.frombuffer(cell, dtype=np.float64).reshape(3, 3))
+            structure = Structure(lattice, symbols, xyz, coords_are_cartesian=True)
+            info = meta.get(sid, {})
+            row = dict(labels.get(sid, {}))
+            row["formula"] = info.get("formula_sc")
+            yield info.get("mpid") or f"db-{sid}", structure, row
+            n += 1
+            if limit and n >= int(limit):
+                break
+        con.close()
     else:
         raise ValueError(f"未知数据源类型: {cfg['kind']}")
 
