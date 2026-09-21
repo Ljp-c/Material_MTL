@@ -32,6 +32,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
 from joblib import Parallel, delayed
 from pymatgen.core import Element, Lattice, Structure
 from tqdm import tqdm
@@ -114,7 +115,8 @@ SOURCES = {
                     "mp_gap", "stable", "theoretical"),
         "label": "formation_energy_per_atom",
         "group": "formula",
-        "desc": "全库 MLIP 空位筛选 153234 条（ASE db；结构=原胞平均 42.5 原子；标签=材料级形成能/E_mace/ehull/带隙/稳定性，注意 db 内不含空位形成能）",
+        "site_labels": "data/full_db_vacancy_formation_energy/Vacancies.json",
+        "desc": "全库 MLIP 空位筛选 153234 条（ASE db；结构=原胞平均 42.5 原子；图级标签=材料级形成能/E_mace/ehull/带隙/稳定性；位点级标签=site_vacancy 空位形成能）",
     },
 }
 
@@ -154,6 +156,21 @@ def _load_extra_labels(extra_cfgs):
                 value = record[col]
                 if value is not None and value == value:
                     bucket.setdefault(col, value)
+    return table
+
+
+def _load_site_vacancy(path):
+    """读 Vacancies.json -> {mpid: 位点空位形成能数组}（顺序与 db 原胞原子一致）。"""
+    if not path.exists():
+        print(f"     警告: 位点标签文件不存在 {path}")
+        return {}
+    with open(path, encoding="utf-8") as f:
+        raw = json.load(f)
+    table = {}
+    for mid, obj in raw.items():
+        values = obj.get("Vacancy")
+        if values:
+            table[mid] = np.asarray(values, dtype=np.float32)
     return table
 
 
@@ -227,6 +244,9 @@ def _iter_raw(name, cfg, limit=None):
             yield str(row["material_id"]), st, row
     elif cfg["kind"] == "ase_db":
         con = sqlite3.connect(f"file:{ROOT / cfg['file']}?mode=ro", uri=True)
+        site_table = _load_site_vacancy(ROOT / cfg["site_labels"]) if cfg.get("site_labels") else {}
+        if site_table:
+            print(f"   位点标签: {len(site_table)} 条（Vacancies.json 的 Vacancy 数组）")
         wanted = set(cfg["targets"])
         labels = {}
         for sid, key, value in con.execute("SELECT id, key, value FROM number_key_values"):
@@ -249,7 +269,11 @@ def _iter_raw(name, cfg, limit=None):
             info = meta.get(sid, {})
             row = dict(labels.get(sid, {}))
             row["formula"] = info.get("formula_sc")
-            yield info.get("mpid") or f"db-{sid}", structure, row
+            mid = info.get("mpid") or f"db-{sid}"
+            values = site_table.get(mid)
+            if values is not None and len(values) == len(z):
+                row["_site_vacancy"] = values
+            yield mid, structure, row
             n += 1
             if limit and n >= int(limit):
                 break
@@ -325,6 +349,13 @@ def _process_shard(shard_file, params):
         if group is not None:
             data.split_group = str(group)
         data.name = str(mid)
+        for key, value in row.items():
+            if not key.startswith("_site_"):
+                continue
+            arr = np.asarray(value, dtype=np.float32).reshape(-1)
+            if arr.shape[0] != data.n_atoms:
+                continue
+            setattr(data, key[len("_site_"):], torch.from_numpy(arr).view(-1, 1))
         line_index, line_attr = data.line_edge_index, data.line_edge_attr
         del data.line_edge_index
         del data.line_edge_attr
@@ -334,6 +365,9 @@ def _process_shard(shard_file, params):
         entry = {"material_id": mid, "formula": row.get("formula"),
                  "n_atoms": int(data.n_atoms), "n_edges": int(data.n_edges),
                  "n_line_edges": int(data.n_line_edges), "group": group}
+        if hasattr(data, "vacancy"):
+            entry["site_vacancy_mean"] = float(data.vacancy.mean())
+            entry["site_vacancy_min"] = float(data.vacancy.min())
         for name in params["targets"]:
             entry[name] = targets.get(name)
         rows.append(entry)
