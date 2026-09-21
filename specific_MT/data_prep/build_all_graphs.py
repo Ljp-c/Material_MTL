@@ -32,6 +32,7 @@ from pathlib import Path
 import pandas as pd
 from joblib import Parallel, delayed
 from pymatgen.core import Structure
+from tqdm import tqdm
 
 from build_graphs import (GraphBuilder, OxidationResolver, SCALAR_COLUMNS, X_LAYOUT,
                           apply_stats, collect_scalars, compute_stats)
@@ -60,7 +61,11 @@ SOURCES = {
         "targets": ("formation_energy_per_atom_eV", "band_gap_eV", "energy_above_hull_eV_per_atom"),
         "label": "formation_energy_per_atom_eV",
         "group": "split_group",
-        "desc": "MP 全库形成能/带隙 153877 条",
+        "extra_labels": (
+            {"path": "data/full_db_band_edge/band_edges.parquet", "key": "material_id",
+             "columns": ("cbm_eV", "vbm_eV", "efermi_eV", "gap_from_edges_eV")},
+        ),
+        "desc": "MP 全库形成能/带隙 153877 条 + 带边多任务标签",
     },
     "ferroelectric": {
         "kind": "ferro_jsonl",
@@ -77,7 +82,17 @@ SOURCES = {
         "targets": ("formation_energy_per_atom_eV", "band_gap_eV", "energy_above_hull_eV_per_atom"),
         "label": "formation_energy_per_atom_eV",
         "group": "reduced_formula",
-        "desc": "BaTiO3 母体+掺杂 153 条（形成能/带隙）",
+        "extra_labels": (
+            {"path": "data/finetune_BaTiO3_doped/BaTiO3_dielectric/dielectric.parquet", "key": "material_id",
+             "columns": ("e_total", "e_ionic", "e_electronic", "n")},
+            {"path": "data/finetune_BaTiO3_doped/BaTiO3_elastic/elasticity.parquet", "key": "material_id",
+             "columns": ("young_modulus", "debye_temperature", "universal_anisotropy")},
+            {"path": "data/finetune_BaTiO3_doped/BaTiO3_magnetic/magnetism.parquet", "key": "material_id",
+             "columns": ("num_magnetic_sites",)},
+            {"path": "data/finetune_BaTiO3_doped/BaTiO3_thermodynamics/thermo.parquet", "key": "material_id",
+             "columns": ("energy_per_atom", "decomposition_enthalpy", "equilibrium_reaction_energy_per_atom")},
+        ),
+        "desc": "BaTiO3 母体+掺杂 153 条（形成能/带隙 + 介电/弹性/磁/热力学多任务标签）",
     },
     "batio3_doped": {
         "kind": "df_pkl",
@@ -93,7 +108,57 @@ SOURCES = {
 }
 
 
+def _all_targets(cfg):
+    """基础 targets + 额外标签表的列（去重），即该图数据集的全部多任务标签。"""
+    targets = list(cfg["targets"])
+    for ecfg in cfg.get("extra_labels", ()):
+        for col in ecfg["columns"]:
+            if col not in targets:
+                targets.append(col)
+    return targets
+
+
+def _load_extra_labels(extra_cfgs):
+    """把额外标签表按 key 列（material_id）汇成 {key: {列: 值}}，用于多任务标签。"""
+    table = {}
+    for ecfg in extra_cfgs or ():
+        path = ROOT / ecfg["path"]
+        if not path.exists():
+            print(f"     警告: 额外标签文件不存在 {path}")
+            continue
+        df = pd.read_parquet(path) if path.suffix == ".parquet" else pd.read_csv(path)
+        key = ecfg["key"]
+        if key not in df.columns:
+            print(f"     警告: {path.name} 缺 key 列 {key}")
+            continue
+        cols = [c for c in ecfg["columns"] if c in df.columns]
+        missing = [c for c in ecfg["columns"] if c not in df.columns]
+        if missing:
+            print(f"     警告: {path.name} 缺列 {missing}")
+        df = df[[key] + cols].drop_duplicates(subset=key, keep="first")
+        for record in df.to_dict("records"):
+            k = str(record.pop(key))
+            bucket = table.setdefault(k, {})
+            for col in cols:
+                value = record[col]
+                if value is not None and value == value:
+                    bucket.setdefault(col, value)
+    return table
+
+
 def load_records(name, cfg, limit=None):
+    """生成器：yield (mid, structure, row_dict)，row 里已并入额外标签（多任务）。"""
+    extra = _load_extra_labels(cfg.get("extra_labels"))
+    if extra:
+        print(f"   {name}: 合并额外标签 {len(extra)} 条")
+    for mid, structure, row in _iter_raw(name, cfg, limit):
+        if extra:
+            for col, value in extra.get(mid, {}).items():
+                row.setdefault(col, value)
+        yield mid, structure, row
+
+
+def _iter_raw(name, cfg, limit=None):
     """生成器：yield (mid, structure, row_dict)。"""
     if cfg["kind"] == "pkl_standard":
         with open(ROOT / cfg["file"], "rb") as f:
@@ -156,20 +221,25 @@ def load_records(name, cfg, limit=None):
 def prepare_shards(name, cfg, limit, shard_size, tmp_dir):
     tmp_dir.mkdir(parents=True, exist_ok=True)
     paths, buf, total = [], [], 0
-    for mid, structure, row in load_records(name, cfg, limit):
-        buf.append((mid, structure, row))
-        total += 1
-        if len(buf) >= shard_size:
+    bar = tqdm(desc=f"split {name}", unit="it", mininterval=0.5)
+    try:
+        for mid, structure, row in load_records(name, cfg, limit):
+            buf.append((mid, structure, row))
+            total += 1
+            bar.update(1)
+            if len(buf) >= shard_size:
+                p = tmp_dir / f"{name}_{len(paths):05d}.pkl"
+                with open(p, "wb") as f:
+                    pickle.dump(buf, f)
+                paths.append(p)
+                buf = []
+        if buf:
             p = tmp_dir / f"{name}_{len(paths):05d}.pkl"
             with open(p, "wb") as f:
                 pickle.dump(buf, f)
             paths.append(p)
-            buf = []
-    if buf:
-        p = tmp_dir / f"{name}_{len(paths):05d}.pkl"
-        with open(p, "wb") as f:
-            pickle.dump(buf, f)
-        paths.append(p)
+    finally:
+        bar.close()
     return paths, total
 
 
@@ -250,7 +320,9 @@ def main() -> int:
     parser.add_argument("--rbf-bins", type=int, default=48)
     parser.add_argument("--angle-bins", type=int, default=16)
     parser.add_argument("--oxi-mode", choices=["bva", "guess", "none"], default="bva")
-    parser.add_argument("--stats", default=str(GRAPH_DIR / "feature_stats.json"))
+    parser.add_argument("--graph-dir", default=str(GRAPH_DIR), help="图输出根目录")
+    parser.add_argument("--stats", default=None,
+                        help="标量特征统计 json；默认 <graph-dir>/feature_stats.json")
     parser.add_argument("--fit-stats-from", default="dielectric", help="用哪个数据集统计标量特征")
     parser.add_argument("--refit", action="store_true", help="强制重算 stats")
     parser.add_argument("--clean", action="store_true", help="先删除 graph/ 与 data/graphs 里的旧图")
@@ -262,18 +334,21 @@ def main() -> int:
             print(f"  {name:28s} {cfg['desc']}")
         return 0
 
+    graph_dir = Path(args.graph_dir)
+    if args.stats is None:
+        args.stats = str(graph_dir / "feature_stats.json")
     if args.clean:
-        if GRAPH_DIR.exists():
-            shutil.rmtree(GRAPH_DIR)
-            print(f"[clean] 已删除 {GRAPH_DIR}")
-        GRAPH_DIR.mkdir(parents=True, exist_ok=True)
+        if graph_dir.exists():
+            shutil.rmtree(graph_dir)
+            print(f"[clean] 已删除 {graph_dir}")
+        graph_dir.mkdir(parents=True, exist_ok=True)
         _JOBLIB_TMP.mkdir(parents=True, exist_ok=True)
         old = DATA_DIR / "graphs"
         if old.exists():
             shutil.rmtree(old)
             print(f"[clean] 已删除 {old}")
-    GRAPH_DIR.mkdir(parents=True, exist_ok=True)
-    tmp_dir = GRAPH_DIR / "_tmp"
+    graph_dir.mkdir(parents=True, exist_ok=True)
+    tmp_dir = graph_dir / "_tmp"
     stats_path = Path(args.stats)
 
     selected = args.only or list(SOURCES)
@@ -303,11 +378,12 @@ def main() -> int:
             return 2
         print(f"[2/3] 在 {source} 上统计标量特征 ...")
         t0 = time.time()
-        pieces = Parallel(n_jobs=args.jobs)(
+        stream = Parallel(n_jobs=args.jobs, return_as="generator")(
             delayed(_scan_shard)(p, args.oxi_mode) for p in shards_by_name[source])
         chunks = {key: [] for key, _ in SCALAR_COLUMNS}
         n_structures = 0
-        for piece, n_rec in pieces:
+        for piece, n_rec in tqdm(stream, total=len(shards_by_name[source]),
+                                 desc=f"stats {source}", unit="shard"):
             for key in chunks:
                 chunks[key].extend(piece[key])
             n_structures += n_rec
@@ -331,12 +407,12 @@ def main() -> int:
                     "line_encoding": args.line_mode}
     for name in selected:
         cfg = SOURCES[name]
-        out_dir = GRAPH_DIR / name
+        out_dir = graph_dir / name
         out_dir.mkdir(parents=True, exist_ok=True)
         params = {
             "builder": builder_args,
             "oxi_mode": args.oxi_mode,
-            "targets": list(cfg["targets"]),
+            "targets": _all_targets(cfg),
             "label": cfg["label"],
             "group": cfg.get("group"),
             "stats": stats,
@@ -344,17 +420,25 @@ def main() -> int:
         }
         t0 = time.time()
         shards = shards_by_name[name]
-        results = Parallel(n_jobs=args.jobs, verbose=0)(
+        stream = Parallel(n_jobs=args.jobs, return_as="generator")(
             delayed(_process_shard)(p, params) for p in shards)
-        rows = [r for res in sorted(results, key=lambda x: x["shard"]) for r in res["rows"]]
-        failed = sum(res["failed"] for res in results)
+        bar = tqdm(stream, total=len(shards), desc=f"build {name}", unit="shard")
+        collected, failed, n_graphs = [], 0, 0
+        for res in bar:
+            collected.append(res)
+            failed += res["failed"]
+            n_graphs += res["n_graphs"]
+            bar.set_postfix(graphs=n_graphs, failed=failed)
+        bar.close()
+        collected.sort(key=lambda x: x["shard"])
+        rows = [r for res in collected for r in res["rows"]]
         index_csv = out_dir / "index.csv"
         pd.DataFrame(rows).to_csv(index_csv, index=False, encoding="utf-8-sig")
         meta = {
             "source": name,
             "desc": cfg["desc"],
             "kind": cfg["kind"],
-            "targets": list(cfg["targets"]),
+            "targets": _all_targets(cfg),
             "label": cfg["label"],
             "group": cfg.get("group"),
             "builder": builder_args,
@@ -384,8 +468,8 @@ def main() -> int:
         shutil.rmtree(tmp_dir)
         print(f"[清理] 已删除临时分片 {tmp_dir}")
 
-    total_gb = sum(p.stat().st_size for p in GRAPH_DIR.rglob("*.pkl")) / 1024 ** 3
-    print(f"\n完成: graph/ 合计 {total_gb:.2f} GB")
+    total_gb = sum(p.stat().st_size for p in graph_dir.rglob("*.pkl")) / 1024 ** 3
+    print(f"\n完成: {graph_dir} 合计 {total_gb:.2f} GB")
     return 0
 
 
