@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
 import pickle
@@ -119,6 +120,44 @@ SOURCES = {
         "desc": "全库 MLIP 空位筛选 153234 条（ASE db；结构=原胞平均 42.5 原子；图级标签=材料级形成能/E_mace/ehull/带隙/稳定性；位点级标签=site_vacancy 空位形成能）",
     },
 }
+
+
+def _pid_alive(pid: int) -> bool:
+    if os.name == "nt":
+        import ctypes
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, int(pid))
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except OSError:
+        return False
+    return True
+
+
+def _acquire_lock(graph_dir: Path, force: bool):
+    """同一图目录只允许一个构建进程；返回锁文件路径，被占用时返回 None。"""
+    lock_path = graph_dir / ".build.lock"
+    if lock_path.exists() and not force:
+        info = {}
+        try:
+            info = json.loads(lock_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        pid = info.get("pid")
+        if pid and _pid_alive(int(pid)):
+            print(f"检测到另一个构建进程正在运行 (pid={pid}, 启动于 {info.get('started')})。")
+            print("同一个图目录不能并发构建（--clean 会互删输出目录，导致 FileNotFoundError）。")
+            print(f"请等它结束；确认已结束后可加 --force，或删除 {lock_path}")
+            return None
+        print(f"发现残留锁文件（pid={pid} 已不存在），继续。")
+    lock_path.write_text(
+        json.dumps({"pid": os.getpid(), "started": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "graph_dir": str(graph_dir)}, ensure_ascii=False),
+        encoding="utf-8")
+    return lock_path
 
 
 def _all_targets(cfg):
@@ -292,12 +331,14 @@ def prepare_shards(name, cfg, limit, shard_size, tmp_dir):
             total += 1
             bar.update(1)
             if len(buf) >= shard_size:
+                tmp_dir.mkdir(parents=True, exist_ok=True)
                 p = tmp_dir / f"{name}_{len(paths):05d}.pkl"
                 with open(p, "wb") as f:
                     pickle.dump(buf, f)
                 paths.append(p)
                 buf = []
         if buf:
+            tmp_dir.mkdir(parents=True, exist_ok=True)
             p = tmp_dir / f"{name}_{len(paths):05d}.pkl"
             with open(p, "wb") as f:
                 pickle.dump(buf, f)
@@ -328,6 +369,7 @@ def _process_shard(shard_file, params):
     shard_id = int(Path(shard_file).stem.rsplit("_", 1)[-1])
 
     crystal, line, rows = {}, {}, []
+    out_dir.mkdir(parents=True, exist_ok=True)
     failed = 0
     for mid, structure, row in records:
         targets = {}
@@ -400,6 +442,7 @@ def main() -> int:
     parser.add_argument("--fit-stats-from", default="dielectric", help="用哪个数据集统计标量特征")
     parser.add_argument("--refit", action="store_true", help="强制重算 stats")
     parser.add_argument("--clean", action="store_true", help="先删除 graph/ 与 data/graphs 里的旧图")
+    parser.add_argument("--force", action="store_true", help="忽略 .build.lock（确认没有其他构建进程在跑）")
     parser.add_argument("--keep-tmp", action="store_true", help="保留临时分片")
     args = parser.parse_args()
 
@@ -411,17 +454,25 @@ def main() -> int:
     graph_dir = Path(args.graph_dir)
     if args.stats is None:
         args.stats = str(graph_dir / "feature_stats.json")
+    graph_dir.mkdir(parents=True, exist_ok=True)
+    lock = _acquire_lock(graph_dir, args.force)
+    if lock is None:
+        return 2
+    atexit.register(lambda: lock.unlink(missing_ok=True))
     if args.clean:
-        if graph_dir.exists():
-            shutil.rmtree(graph_dir)
-            print(f"[clean] 已删除 {graph_dir}")
-        graph_dir.mkdir(parents=True, exist_ok=True)
+        for child in sorted(graph_dir.iterdir()):
+            if child == lock:
+                continue
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        print(f"[clean] 已清空 {graph_dir}（保留 .build.lock）")
         _JOBLIB_TMP.mkdir(parents=True, exist_ok=True)
         old = DATA_DIR / "graphs"
         if old.exists():
             shutil.rmtree(old)
             print(f"[clean] 已删除 {old}")
-    graph_dir.mkdir(parents=True, exist_ok=True)
     tmp_dir = graph_dir / "_tmp"
     stats_path = Path(args.stats)
 
