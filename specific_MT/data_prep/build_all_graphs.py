@@ -90,7 +90,7 @@ SOURCES = {
             {"path": "data/finetune_BaTiO3_doped/BaTiO3_dielectric/dielectric.parquet", "key": "material_id",
              "columns": ("e_total", "e_ionic", "e_electronic", "n")},
             {"path": "data/finetune_BaTiO3_doped/BaTiO3_elastic/elasticity.parquet", "key": "material_id",
-             "columns": ("young_modulus", "debye_temperature", "universal_anisotropy")},
+             "columns": ("homogeneous_poisson", "debye_temperature", "universal_anisotropy")},
             {"path": "data/finetune_BaTiO3_doped/BaTiO3_magnetic/magnetism.parquet", "key": "material_id",
              "columns": ("num_magnetic_sites",)},
             {"path": "data/finetune_BaTiO3_doped/BaTiO3_thermodynamics/thermo.parquet", "key": "material_id",
@@ -118,6 +118,15 @@ SOURCES = {
         "group": "formula",
         "site_labels": "data/full_db_vacancy_formation_energy/Vacancies.json",
         "desc": "全库 MLIP 空位筛选 153234 条（ASE db；结构=原胞平均 42.5 原子；图级标签=材料级形成能/E_mace/ehull/带隙/稳定性；位点级标签=site_vacancy 空位形成能）",
+    },
+    "2d_layers": {
+        "kind": "ase_db",
+        "file": "data/full_db_vacancy_formation_energy/2D_layers.db",
+        "targets": ("Formation_energy", "E_MACE", "HEE", "LNE", "LDFE",
+                    "ehull_MP", "factor_2D", "final_factor_2D"),
+        "label": "Formation_energy",
+        "group": None,
+        "desc": "2D 层状材料 MLIP 筛选 8017 条（ASE db；单层结构 1-6 原子；标签=Formation_energy/E_MACE/HEE/LNE/LDFE/ehull_MP/2D 因子）",
     },
 }
 
