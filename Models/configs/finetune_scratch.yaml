@@ -1,0 +1,10 @@
+base: Models/configs/finetune.yaml
+init_from: null
+paths:
+  out_dir: Models/artifacts/finetune_scratch
+train:
+  head_lr: 0.0003
+  backbone_lr: 0.0003
+  freeze:
+    freeze_epochs: 0
+    unfreeze_last_blocks: 0

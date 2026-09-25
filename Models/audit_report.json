@@ -1,0 +1,292 @@
+{
+  "formation_energy_band_gap": {
+    "rows": 154030,
+    "unique_material_id": 153877,
+    "duplicate_rows": 153,
+    "duplicate_examples": [
+      "mp-aaaaaeli",
+      "mp-aaaaaesd",
+      "mp-aaaaafar",
+      "mp-aaaaafvr",
+      "mp-aaaaahlc"
+    ],
+    "duplicate_mids_with_differing_values": 0,
+    "unique_groups": 104546,
+    "max_group_size": 726,
+    "formation_energy_per_atom_eV": {
+      "finite": 154026,
+      "ratio": 1.0
+    },
+    "band_gap_eV": {
+      "finite": 154026,
+      "ratio": 1.0
+    },
+    "cbm_eV": {
+      "finite": 88008,
+      "ratio": 0.5714
+    },
+    "vbm_eV": {
+      "finite": 88008,
+      "ratio": 0.5714
+    },
+    "gap_from_edges_eV": {
+      "finite": 88008,
+      "ratio": 0.5714
+    },
+    "gap": {
+      "metal_rows": 72160,
+      "metal_ratio": 0.4685,
+      "positive_quantiles": {
+        "p0": 0.0,
+        "p50": 1.734,
+        "p90": 4.202,
+        "p99": 6.209,
+        "p100": 17.891
+      }
+    },
+    "cbm_finite_gap_zero_rows": 6267,
+    "gap_from_edges_vs_cbm_minus_vbm": {
+      "n": 88008,
+      "median_abs_diff": 0.0,
+      "ratio_le_0.05": 1.0
+    },
+    "band_gap_vs_cbm_minus_vbm": {
+      "n": 88008,
+      "median_abs_diff": 0.0,
+      "ratio_le_0.05": 1.0
+    },
+    "ehull_negative_rows": 0
+  },
+  "vacancy_screening": {
+    "rows": 153234,
+    "n_atoms": {
+      "min": 1.0,
+      "p25": 16.0,
+      "p50": 28.0,
+      "p75": 52.0,
+      "p95": 123.0,
+      "max": 1278.0,
+      "le_1": 39,
+      "le_4": 4385
+    },
+    "site_label_coverage": 0.8505,
+    "site_mean": {
+      "negative_ratio": 0.028,
+      "p0": -17.7089,
+      "p50": 3.2132,
+      "p90": 6.0881,
+      "p99": 8.1623,
+      "p100": 9.595
+    },
+    "formation_vs_ehull": {
+      "n_both": 138059,
+      "identical_ratio": 0.0243
+    },
+    "formation_range": {
+      "p0": -11.8642,
+      "p50": -1.4613,
+      "p90": 0.011,
+      "p99": 1.9237,
+      "p100": 9.0392
+    },
+    "formation_spearman": {
+      "vs_ehull": 0.1513,
+      "vs_E_mace": 0.5146,
+      "vs_energy_per_atom": 0.1612
+    },
+    "stable_ratio": 0.2093,
+    "ba_subset": {
+      "n": 8277,
+      "single_element_ratio": 0.0013,
+      "contains_oxygen_ratio": 0.6868,
+      "top_chemsys": [
+        [
+          "Ba-O-Ti",
+          52
+        ],
+        [
+          "Ba-I-Sr",
+          46
+        ],
+        [
+          "Ba-Ca-I",
+          44
+        ],
+        [
+          "Ba-Mn-O",
+          40
+        ],
+        [
+          "Ba-O-V",
+          39
+        ],
+        [
+          "Ba-H-O",
+          37
+        ],
+        [
+          "Ba-Nb-O",
+          35
+        ],
+        [
+          "Ba-Fe-O",
+          32
+        ]
+      ]
+    },
+    "shard_site_values": {
+      "shards": 1,
+      "sites": 26583,
+      "quantiles": {
+        "p0": -7.299,
+        "p50": 1.923,
+        "p90": 5.913,
+        "p99": 14.576,
+        "p100": 18.671
+      },
+      "negative_ratio": 0.0533,
+      "abs_gt_10_ratio": 0.02351,
+      "samples_without_site_labels": 241
+    }
+  },
+  "batio3": {
+    "rows": 153,
+    "abo3_rows": 25,
+    "strict_batio3_rows": 18,
+    "non_abo3_examples": [
+      {
+        "formula": "BaMg6TiO8",
+        "O": 8.0,
+        "A": 1.0,
+        "B": 7.0
+      },
+      {
+        "formula": "BaMg6TiO8",
+        "O": 8.0,
+        "A": 1.0,
+        "B": 7.0
+      },
+      {
+        "formula": "BaMg14TiO16",
+        "O": 16.0,
+        "A": 1.0,
+        "B": 15.0
+      },
+      {
+        "formula": "BaMg14TiO16",
+        "O": 16.0,
+        "A": 1.0,
+        "B": 15.0
+      },
+      {
+        "formula": "BaMg30TiO32",
+        "O": 32.0,
+        "A": 1.0,
+        "B": 31.0
+      },
+      {
+        "formula": "BaMg30TiO32",
+        "O": 32.0,
+        "A": 1.0,
+        "B": 31.0
+      },
+      {
+        "formula": "Ba2Ti3AlO8",
+        "O": 8.0,
+        "A": 2.0,
+        "B": 4.0
+      },
+      {
+        "formula": "BaMgTi4O8",
+        "O": 8.0,
+        "A": 1.0,
+        "B": 5.0
+      }
+    ],
+    "formation_energy_per_atom_eV_coverage": 153,
+    "band_gap_eV_coverage": 153,
+    "energy_above_hull_eV_per_atom_coverage": 153,
+    "e_total_coverage": 5,
+    "e_ionic_coverage": 5,
+    "e_electronic_coverage": 5,
+    "debye_temperature_coverage": 15,
+    "num_magnetic_sites_coverage": 153
+  },
+  "family": {
+    "family_groups_total": 6118,
+    "formation_energy_band_gap": {
+      "samples_in_family": 8207,
+      "examples": [
+        "BaCaTi4O8",
+        "Ba2YTi3O8",
+        "BaTi4O8",
+        "Ba2YTi3O7",
+        "Ba2Ti3AlO7"
+      ]
+    },
+    "vacancy_screening": {
+      "samples_in_family": 8269,
+      "examples": [
+        "Ba27",
+        "Ba64",
+        "Ba24",
+        "Ba27",
+        "Ba48"
+      ]
+    },
+    "batio3": {
+      "samples_in_family": 145,
+      "examples": [
+        "BaCaTi4O8",
+        "Ba2YTi3O8",
+        "BaTi4O8",
+        "Ba2YTi3O7",
+        "Ba2Ti3AlO7"
+      ]
+    },
+    "batio3_doped": {
+      "samples_in_family": 244,
+      "examples": [
+        "Ba2La4Ti5O18",
+        "Ba6Nd2Ti4O17",
+        "BaSr7Ti8O24",
+        "Ba2MgTiO4",
+        "BaMgTiO3"
+      ]
+    }
+  },
+  "global_feat": {
+    "formation_energy_band_gap": {
+      "exists": true,
+      "rows": 153877,
+      "missing_columns": [],
+      "missing_in_index": 0,
+      "missing_examples": [],
+      "nan_rows": 0
+    },
+    "vacancy_screening": {
+      "exists": true,
+      "rows": 153234,
+      "missing_columns": [],
+      "missing_in_index": 0,
+      "missing_examples": [],
+      "nan_rows": 0
+    },
+    "batio3": {
+      "exists": true,
+      "rows": 153,
+      "missing_columns": [],
+      "missing_in_index": 0,
+      "missing_examples": [],
+      "nan_rows": 0
+    },
+    "batio3_doped": {
+      "exists": true,
+      "rows": 252,
+      "missing_columns": [],
+      "missing_in_index": 0,
+      "missing_examples": [],
+      "nan_rows": 0
+    }
+  }
+}

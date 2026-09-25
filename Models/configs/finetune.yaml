@@ -1,0 +1,34 @@
+base: Models/configs/pretrain.yaml
+stage: finetune
+init_from: Models/artifacts/pretrain/best.pt
+exclude_family: false
+paths:
+  out_dir: Models/artifacts/finetune
+split:
+  val_frac: 0.15
+  test_frac: 0.15
+  seed: 1234
+filters:
+  exclude_formulas: [BaMg6TiO8, BaMg14TiO16, BaMg30TiO32, Ba2Ti3AlO8, BaMgTi4O8]
+sources:
+  - name: batio3
+    filters:
+      perovskite_batio3: true
+  - name: batio3_doped
+  - name: vacancy_screening
+    filters:
+      contains_elements: [Ba]
+model:
+  dropout: 0.2
+train:
+  batch_size: 32
+  head_lr: 0.001
+  backbone_lr: 0.00001
+  weight_decay: 0.0001
+  max_epochs: 300
+  log_every_steps: 10
+  val_max_batches: null
+  early_stop_patience: 50
+  freeze:
+    freeze_epochs: 30
+    unfreeze_last_blocks: 2

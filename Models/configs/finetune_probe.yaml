@@ -1,0 +1,8 @@
+base: Models/configs/finetune.yaml
+paths:
+  out_dir: Models/artifacts/finetune_probe
+train:
+  max_epochs: 200
+  freeze:
+    freeze_epochs: 99999
+    unfreeze_last_blocks: 0

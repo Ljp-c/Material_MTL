@@ -1,0 +1,7 @@
+epoch,step,split,term,value,share
+0,200,val,cbm,0.409073,0.1193
+0,200,val,consistency,0.00619641,0.0018
+0,200,val,formation,0.736876,0.2149
+0,200,val,gap,1.23179,0.3593
+0,200,val,vacancy,0.591648,0.1726
+0,200,val,vbm,0.45268,0.1320

@@ -1,0 +1,11 @@
+epoch,step,split,source,target,n,mae,rmse,r2
+0,200,val,formation_energy_band_gap,cbm,7,1.89138,1.95913,-1.91214
+0,200,val,formation_energy_band_gap,formation,39,0.912301,1.0292,-0.0891768
+0,200,val,formation_energy_band_gap,gap,7,2.00028,2.15035,0.0431577
+0,200,val,formation_energy_band_gap,vbm,7,2.09196,2.35009,-0.453056
+0,200,val,vacancy_screening,vacancy,436,1.81774,2.88304,-0.0586525
+0,200,val,__overall__,cbm,7,1.89138,1.95913,-1.91214
+0,200,val,__overall__,formation,39,0.912301,1.0292,-0.0891768
+0,200,val,__overall__,gap,7,2.00028,2.15035,0.0431577
+0,200,val,__overall__,vacancy,436,1.81774,2.88304,-0.0586525
+0,200,val,__overall__,vbm,7,2.09196,2.35009,-0.453056

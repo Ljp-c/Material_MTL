@@ -1,0 +1,45 @@
+stage: pretrain
+seed: 42
+device: cuda
+sampling: sqrt_inv
+exclude_family: true
+paths:
+  stats: Models/stats/label_stats.json
+  out_dir: Models/artifacts/pretrain
+split:
+  val_frac: 0.02
+  test_frac: 0.02
+  seed: 1234
+filters:
+  min_atoms: 0
+  max_atoms: null
+sources:
+  - name: formation_energy_band_gap
+  - name: vacancy_screening
+model:
+  hidden: 64
+  conv_dim: 128
+  blocks: 4
+  angle_k: 8
+  angle_feat_dim: 32
+  dropout: 0.05
+  global_dim: 8
+  pool_norm: false
+  use_metal: false
+  heads: [formation, gap, edges, vacancy]
+loss:
+  weights: {formation: 1.0, gap: 1.0, cbm: 0.5, vbm: 0.5, vacancy: 1.0, metal: 0.2}
+  betas: {formation: 0.05, gap: 0.1, cbm: 0.1, vbm: 0.1, vacancy: 0.1}
+  consistency_weight: 0.1
+  consistency_ramp_frac: 0.05
+train:
+  batch_size: 64
+  lr: 0.0003
+  weight_decay: 0.00001
+  warmup_frac: 0.05
+  min_lr_ratio: 0.05
+  grad_clip: 5.0
+  max_epochs: 20
+  log_every_steps: 50
+  val_max_batches: 40
+  early_stop_patience: 15
