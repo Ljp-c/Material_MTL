@@ -289,7 +289,7 @@ class GraphBuilder:
             edge_index = torch.zeros((2, 0), dtype=torch.long)
             edge_attr = torch.zeros((0, self.rbf_bins), dtype=torch.float32)
             line_index = torch.zeros((2, 0), dtype=torch.long)
-            line_attr = torch.zeros((0, self.angle_bins), dtype=torch.float32)
+            line_attr = torch.zeros((0, self.line_dim), dtype=torch.float32)
 
         data = CrystalData(x=torch.from_numpy(x), edge_index=edge_index, edge_attr=edge_attr,
                            line_edge_index=line_index, line_edge_attr=line_attr)

@@ -15,10 +15,14 @@ Models/
   label_stats.py         标签与全局特征 z-score 统计（两阶段共用）
   train.py               训练 / 微调 / 评估入口（两阶段共用）
   smoke_test.py          最小自检（不读数据）
-  audit_data.py          只读数据审计（标签覆盖 / 组成口径 / 家族重叠 / 特征覆盖）
+  audit_data.py          只读数据审计（标签覆盖 / 组成口径 / 预训练剔除重叠 / 特征覆盖）
+  build_subset.py        物化小数据源子集缓存（微调 vacancy Ba 子集，之后每 epoch 秒级）
+  check_data.py          数据-模型契约全量检查（形状/标签对齐/prepare_sample 试跑；换数据或重建后先跑）
+  predict.py             逐样本预测导出（CSV）+ 分层误差统计
+  plot_run.py            训练曲线绘图（每步/每轮/验证 → artifacts/pictures，可手动补画）
   configs/
     pretrain.yaml        阶段一：全库预训练（global_dim: 8）
-    finetune.yaml        阶段二：BaTiO3 族微调（严格 BaTiO3 子集 + doped + 含 Ba 空位；冻结 30 epoch → 解冻 2 块）
+    finetune.yaml        阶段二：BaTiO3 族微调（exclude_formulas 过滤 + doped + 含 Ba 空位；冻结 30 epoch → 解冻 2 块）
     finetune_probe.yaml  对照：线性探针（骨干全程冻结，只训头）
     finetune_scratch.yaml 对照：家族数据从零训练
   stats/                 运行 label_stats.py 后生成 label_stats.json（含 global_feat 统计）
@@ -50,11 +54,17 @@ E:\Material_MTL\crystal_env\Scripts\python.exe specific_MT\data_prep\build_globa
 # 2) 生成标签 + 全局特征统计（默认读 16 个 vacancy 分片，约 1 分钟）
 E:\Material_MTL\crystal_env\Scripts\python.exe Models\label_stats.py --config Models\configs\pretrain.yaml
 
+# 2.5) 数据-模型契约体检（换数据/重建图后必跑；全量约 5–10 min，0 违规才开训）
+E:\Material_MTL\crystal_env\Scripts\python.exe Models\check_data.py
+
 # 3) 数据管线冒烟（1 个分片、200 步；日志含真实步频 step/s）
 E:\Material_MTL\crystal_env\Scripts\python.exe Models\train.py --config Models\configs\pretrain.yaml --limit-shards 1 --max-steps 200
 
 # 4) 正式预训练（20 epoch、约 29 万图；想先看曲线可在配置里把 max_epochs 调成 5）
 E:\Material_MTL\crystal_env\Scripts\python.exe Models\train.py --config Models\configs\pretrain.yaml
+
+# 4.5) 微调前物化 vacancy Ba 子集缓存（一次性全量扫描 ~3 分钟；重复运行会重建）
+E:\Material_MTL\crystal_env\Scripts\python.exe Models\build_subset.py --config Models\configs\finetune.yaml
 
 # 5) 微调与两个必修对照（微调依赖预训练的 best.pt）
 E:\Material_MTL\crystal_env\Scripts\python.exe Models\train.py --config Models\configs\finetune.yaml
@@ -71,6 +81,7 @@ E:\Material_MTL\crystal_env\Scripts\python.exe Models\train.py --config Models\c
 |---|---|
 | `--limit-shards N` | 每个数据源只读前 N 个分片（冒烟 / 小子集拟合测试） |
 | `--max-steps N` | 训练步数上限（冒烟） |
+| `--val-every-steps N` | 每 N 步做一次验证并写入 metrics.csv（短实验画密曲线用；0=关闭） |
 | `--device cpu|cuda` | 覆盖配置中的 device（CUDA 不可用会自动回退） |
 | `--seed N` | 覆盖随机种子（5 种子集成用） |
 | `--dropout p` | 覆盖模型 dropout（拟合测试 0.0 / 正则扫描 0.1、0.3） |
@@ -78,6 +89,8 @@ E:\Material_MTL\crystal_env\Scripts\python.exe Models\train.py --config Models\c
 | `--out-dir 路径` | 覆盖输出目录 |
 | `--ckpt 路径` | `--eval-only` 或微调初始化使用 |
 | `--eval-only --split val|test` | 只评估，不训练 |
+| `--resume` | 从 `out_dir/last.pt`（或 `--ckpt`）续训：恢复权重/优化器/调度器/epoch |
+| `--prefetch-depth N` | 分片预读深度（0=关闭；默认取配置 `train.prefetch_depth`，当前 2） |
 
 ## 4. 数据语义（当前锁定的四个目标）
 
@@ -98,12 +111,15 @@ E:\Material_MTL\crystal_env\Scripts\python.exe Models\train.py --config Models\c
 ## 5. 划分与防泄漏
 
 - 一律**按组成分组划分**（`index.csv` 的 `group`/`formula` 列），禁止随机按样本划分；同一组成的多态/多构型只会落在同一个 split。
-- **家族由 `finetune.yaml` 自动推导**：把微调各数据源按其 `filters` 过滤后实际用到的组成（归一化 reduced formula）收集为家族集合，预训练（`exclude_family: true`）据此剔除——配置改，家族随之改，不会失同步。当前家族来源：
-  - `batio3`：仅保留严格 BaTiO₃ 基（`perovskite_batio3: true`，§1 口径：ABO₃ 计量 + Ba≥50% A + Ti≥50% B；153 → 18）；
-  - `batio3_doped`：全部保留（La/Nd/Sr 等掺杂有序相）；
-  - `vacancy_screening`：含 Ba 子集（`contains_elements: [Ba]`）；
-  - 顶层 `filters.exclude_formulas` 把非钙钛矿系列（BaMg6TiO8、BaMg14TiO16、BaMg30TiO32、Ba2Ti3AlO8、BaMgTi4O8）**移出微调、留在预训练**。
-- 预训练（`pretrain.yaml`）：val 2% / test 2%（按组）；剔除数量在启动日志中打印（当前 formation 8,207 / vacancy 8,269）。
+- **先过滤/剔除、再分配 val/test 名额**（`data.py` 的 `split_groups`）：被过滤或剔除的组成不占留出名额（曾因"先分配后过滤"导致 `batio3` 的 val/test=0）。
+- **预训练剔除集合由 `finetune.yaml` 自动推导**：对微调各数据源按 `filters` 过滤后、按同一分组规则划出的 **val/test 组成**（归一化 reduced formula）的并集：
+  - 只隔离"微调评估用"的组成，**其余家族数据全部回流预训练**（excluded 从早期的 16,476 降到 6,096）；
+  - 配置改，剔除集合随之改，不会失同步。
+- 微调来源（当前口径，合计 6,067 train / 1,299 val / 1,292 test）：
+  - `batio3`：不做严格钙钛矿筛选，仅用顶层 `filters.exclude_formulas` 踢掉明显非钙钛矿系列（BaMg6TiO8、BaMg14TiO16、BaMg30TiO32、Ba2Ti3AlO8、BaMgTi4O8），153 → 145（105 / 16 / 24）；
+  - `batio3_doped`：全部保留（169 / 40 / 35）；
+  - `vacancy_screening`：含 Ba 子集（`contains_elements: [Ba]`，5,793 / 1,243 / 1,233）。
+- 预训练（`pretrain.yaml`）：val 2% / test 2%（按合格组）。当前 formation 144,862 / 3,012 / 2,962、vacancy 144,155 / 3,064 / 2,960；剔除 2,035 个组成、合计 6,096 条（1.98%）。
 - 微调（`finetune.yaml`）：`exclude_family: false`，家族内部按组成再做 val 15% / test 15% 留出。
 - 两阶段必须共用 `Models/stats/label_stats.json`：checkpoint 记录其 md5，微调时不一致会直接报错（除非显式 `allow_stats_change: true`，不建议）。
 
@@ -126,11 +142,17 @@ E:\Material_MTL\crystal_env\Scripts\python.exe Models\train.py --config Models\c
 | `best.pt` / `last.pt` | 权重 + 模型配置 + 训练元信息（stage、epoch、stats md5、val 指标） |
 | `metrics.csv` | `epoch, step, split, source, target, n, mae, rmse, r2`（`source=__overall__` 为按目标汇总） |
 | `losses.csv` | `epoch, step, split, term, value, share`（逐项损失与占比，用于查单头主导） |
+| `step_log.csv` | **每步**训练日志（时间戳、瞬时 step/s、该步总损失与各分项；该批不含的分项留空） |
+| `epoch_log.csv` | 每轮汇总（时间戳、轮耗时、平均速度、平均总损失与各分项） |
 | `<split>_metrics.json` | `--eval-only` 或训练结束的测试集指标 |
 
 指标一律**物理单位**（还原 z-score）：formation 为 eV/atom，gap/cbm/vbm/vacancy 为 eV；`best.pt` 按验证集总损失（加权）选择，早停同指标。
 
-统计文件 `Models/stats/label_stats.json` 另含：四目标 + vacancy 位点 + `global_feat` 的 mean/std、`loss_mean_z`（输出头 bias 初始化）与 population 元信息（train 划分、家族剔除、分片数）。
+曲线与图片统一放在 `Models/artifacts/pictures/`：**实验文件夹**（`pretrain/`、`metal_test/`、`pretrain_metal/` 等）存该实验的验证四联图（val_mae / val_rmse / val_r2 / val_loss_terms）与逐 step 训练曲线（train_loss / train_terms / train_speed）；**类型文件夹** `val/`、`step/`、`epoch/`、`scatter/`、`csv/` 分别存单张验证图、步级曲线、轮级曲线、预测散点图与配套日志。
+
+训练结束自动生成曲线图并归档到 `Models/artifacts/pictures/`：`<run>_epoch_*.png`（每轮主曲线）、`<run>_step_*.png`（每步平滑曲线）、`<run>_val_*.png`（验证 MAE/R²），文件名带时间戳，两个日志 CSV 也会带时间戳复制一份。对任意 run 手动补画：`python Models\plot_run.py --run-dir Models\artifacts\<run>`。
+
+统计文件 `Models/stats/label_stats.json` 另含：四目标 + vacancy 位点 + `global_feat` 的 mean/std、`loss_mean_z`（输出头 bias 初始化）与 population 元信息（train 划分、预训练剔除组成数、分片数）。
 
 ## 8. 诊断与实验清单（§4.2.9 / §4.2.7）
 
@@ -148,12 +170,15 @@ E:\Material_MTL\crystal_env\Scripts\python.exe Models\train.py --config Models\c
 ## 9. 已知差异与决策记录
 
 1. **136 已按文档落地**：8 维全局特征（a, b, c, α, β, γ, 体积/原子, 密度）以旁挂表 `global_feat.csv` 实现（不重建 62 GB 图分片），`data.py` 在线标准化后拼在池化向量后，头输入 = 128 + 8 = 136；两阶段共用同一套统计（label_stats.json）。
-2. **家族口径**：不再是硬编码名单，而是**从 `finetune.yaml` 推导**（见 §5）；改过滤即改家族。
+2. **预训练剔除口径**：从 `finetune.yaml` 推导，且**只剔除微调 val/test 组成**（见 §5）；改过滤即改剔除集合，其余家族数据回流预训练。
 3. **`use_metal` 默认关闭**：金属识别暂不做；gap 头由 `gap > 0` 掩码学习非金属子集。
 4. **cbm/vbm 与 gap 同口径**：审计发现 6,267 条"gap=0 但 cbm/vbm 有限"的行，已统一排除（约 -7% 样本）。
 5. **line_edge_index 批偏移**：由 `graph_schema.CrystalData.__inc__` 处理（按 `num_edges` 偏移），模型侧**不要**重复偏移；`smoke_test.py` 有专门断言。
-6. **分片流式**：每 epoch 顺序读取全部分片（formation 78 + vacancy 77，约 61 GB）；实测步频 5–8 step/s（1 分片冒烟），全量 20 epoch 约 3.5–7 小时；未实现后台预取与断点续训。
-7. **`batio3` 的 `group` 列为空**：loader 已用 `formula` 回退（组成分组/家族匹配因此恢复正确）。
+6. **分片流式**：预训练每 epoch 顺序读取全部分片（formation 78 + vacancy 77，约 61 GB）；实测步频 5–8 step/s，全量 20 epoch 约 3.5–7 小时。微调 vacancy Ba 子集已物化缓存（`build_subset.py`，约 1.8 GB，每 epoch 秒级）；未实现后台预取与断点续训。
+7. **`batio3` 的 `group` 列为空**：loader 已用 `formula` 回退（组成分组/剔除匹配因此恢复正确）。
+8. **划分顺序修复（2026-09）**：先过滤/剔除、再分配 val/test 名额（`data.py` 的 `split_groups`）；预训练剔除改为"只剔除微调 val/test 组成"，excluded 从 16,476 降到 6,096，其余家族数据回流预训练；修复前 `batio3` 微调 val/test=0。
+9. **数据-模型契约检查（2026-09）**：新增 `check_data.py`（全量 30.7 万图：形状/dtype/索引范围/标签对齐/`prepare_sample` 试跑/子集缓存），最新全量结果 **0 硬性违规**；formation 的 153 个跨分片重复 mid 已在流式读取中去重（每 epoch 每材料恰好一次）。
+10. **断点续训与分片预取（2026-09）**：`last.pt` 现含优化器/调度器/训练状态，`--resume` 可从中恢复（同一 config/tag）；`train.prefetch_depth`（默认 2）用后台线程预读下一分片、隐藏部分磁盘 I/O，`--prefetch-depth 0` 关闭。`best.pt` 仍为纯模型卡（不含优化器状态）。
 
 ## 10. 常见问题
 
@@ -162,10 +187,14 @@ E:\Material_MTL\crystal_env\Scripts\python.exe Models\train.py --config Models\c
 | `缺少标签统计 ...；先运行 python Models\label_stats.py` | 未生成 `Models/stats/label_stats.json` |
 | `微调必须与预训练共用同一份 label_stats` | 统计文件与 checkpoint 记录的 md5 不一致；重新用预训练配置生成，或删除 `allow_stats_change` 思路（不建议开启） |
 | `--eval-only 需要 --ckpt 或配置中的 init_from` | 评估必须指定权重 |
-| `line_edge_attr 形状 ... 期望 [L,1]` | 图数据不是 `--line-mode angle` 建的；用 `build_all_graphs.py --line-mode angle` 重建 |
+| `line_edge_attr 形状 (0,16) ... 期望 [L,1]` | 历史数据中"零邻居"样本的空线图存成了 16 维；加载器已容忍空线图（L=0）并规整为 (0,1)，无需处理。若报**非空**宽度≠1，才是真格式不符，需按 `--line-mode angle` 重建 |
 | `CUDA 不可用，回退 CPU` | 正常回退；检查驱动或改用 `--device cpu` |
 | `缺少 ...\global_feat.csv；先运行 python specific_MT\data_prep\build_global_feat.py` | 未生成全局特征旁挂表（或 `global_dim>0` 时缺表） |
 | `配置 global_dim>0，但 label_stats 缺 global_feat 统计` | 生成旁挂表后重新运行 label_stats.py |
+| `[subset] ... 未找到 subset_*.pkl，回退全量扫描` | 未构建微调子集缓存；运行 `python Models\build_subset.py --config Models\configs\finetune.yaml` |
+| `CUDA error: out of memory` | 批次撞上大晶胞簇（vacancy 最大 1278 原子）；已内置 `train.max_atoms_per_batch`（默认 3000）限制每批原子数，仍 OOM 就把 `batch_size` 降 32 / 上限降 2500 |
+| 训练中途报某材料的形状/属性错误 | 先跑 `python Models\check_data.py` 全量定位（打印违规 material_id 与原因；换数据/重建后必跑） |
+| 训练中断（断电 / 手动停止 / 崩溃） | 用 `--resume` 从 `out_dir/last.pt` 续训（需同一 config/tag）；首次运行起 last.pt 就含优化器状态 |
 | 单个原子/零键角样本 | `vacancy_screening` 存在 39 条 1 原子原胞（如 O84），按你的要求**默认保留** |
 | 空位标签部分缺失（如 mp-1182332） | loader 自动补 NaN 并掩码，不影响训练 |
 
@@ -183,6 +212,6 @@ E:\Material_MTL\crystal_env\Scripts\python.exe Models\audit_data.py --vacancy-sh
 
 - **formation_energy_band_gap**：154,030 行 / 153,877 唯一 mid（153 条完全重复行，数值一致，无害）；金属占比 46.9%；`gap_from_edges` 与 `cbm−vbm`、`band_gap` 与 `cbm−vbm` 一致率 100%（|Δ|≤0.05 eV）；6,267 条金属行带 cbm/vbm，已按 `gap>0` 口径排除。
 - **vacancy_screening**：位点标签覆盖 85.0%；位点能量重尾（|v|>10 占 2.4%，负值 5.3%）；`formation_energy_per_atom` 与 ehull 不等价（2.4%），未接入。
-- **batio3**：153 行中仅 25 行满足 ABO₃ 计量、18 行满足严格 BaTiO₃ 基（微调只取这 18 行）；`e_total` 仅 5 行（介电缺口）。
-- **家族重叠**（当前）：formation 剔除 8,207 / vacancy 剔除 8,269 / batio3_doped 剔除 252（`batio3` 的微调子集 18 行）。
+- **batio3**：153 行中仅 25 行满足 ABO₃ 计量、18 行满足严格 BaTiO₃ 基；当前微调不做严格筛选，仅排除 8 行明显非钙钛矿（145 行进入微调）；`e_total` 仅 5 行（介电缺口）。
+- **预训练剔除重叠**（当前）：剔除集合 2,035 个组成；formation 剔除 3,041 / vacancy 剔除 3,055；微调源自身命中 batio3 92 / batio3_doped 162（含跨源同组成）。
 - **global_feat 覆盖**：四个数据集 100% 覆盖、无 NaN。

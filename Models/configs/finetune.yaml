@@ -1,6 +1,6 @@
 base: Models/configs/pretrain.yaml
 stage: finetune
-init_from: Models/artifacts/pretrain/best.pt
+init_from: Models/artifacts/pretrain_cont/best.pt
 exclude_family: false
 paths:
   out_dir: Models/artifacts/finetune
@@ -12,10 +12,9 @@ filters:
   exclude_formulas: [BaMg6TiO8, BaMg14TiO16, BaMg30TiO32, Ba2Ti3AlO8, BaMgTi4O8]
 sources:
   - name: batio3
-    filters:
-      perovskite_batio3: true
   - name: batio3_doped
   - name: vacancy_screening
+    subset_cache: true
     filters:
       contains_elements: [Ba]
 model:

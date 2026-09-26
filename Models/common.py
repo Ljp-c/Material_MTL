@@ -56,3 +56,10 @@ def file_digest(path) -> str:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def load_torch(path):
+    try:
+        return torch.load(path, map_location="cpu", weights_only=True)
+    except Exception:
+        return torch.load(path, map_location="cpu", weights_only=False)

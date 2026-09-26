@@ -1,4 +1,4 @@
-r"""只读数据审计：标签覆盖、金属占比、空位位点标签、Ba 子集构成、batio3 口径、家族重叠、全局特征覆盖。
+r"""只读数据审计：标签覆盖、金属占比、空位位点标签、Ba 子集构成、batio3 口径、预训练剔除重叠、全局特征覆盖。
 
 用法（工作目录 E:\Material_MTL）:
     python Models\audit_data.py
@@ -20,7 +20,7 @@ from pymatgen.core import Composition
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from data import (A_SITE_ELEMENTS, B_SITE_ELEMENTS, GLOBAL_FEATURE_COLUMNS, Source,
-                  formula_elements, load_family_groups, normalize_group)
+                  formula_elements, load_pretrain_exclude_groups, normalize_group)
 
 SPLIT_CFG = {"val_frac": 0.0, "test_frac": 0.0, "seed": 0}
 
@@ -207,8 +207,8 @@ def audit_batio3(source: Source, report: dict) -> None:
             report[f"{column}_coverage"] = int(pd.to_numeric(table[column], errors="coerce").notna().sum())
 
 
-def audit_family(sources: dict, report: dict) -> None:
-    family = load_family_groups()
+def audit_pretrain_exclude(sources: dict, report: dict) -> None:
+    exclude = load_pretrain_exclude_groups()
     cache: dict[str, str | None] = {}
 
     def normalized(text):
@@ -216,16 +216,16 @@ def audit_family(sources: dict, report: dict) -> None:
             cache[text] = normalize_group(text)
         return cache[text]
 
-    report["family_groups_total"] = len(family)
+    report["exclude_groups_total"] = len(exclude)
     for name, source in sources.items():
         count = 0
         examples = []
         for record in source.records.values():
-            if normalized(record["group"]) in family:
+            if normalized(record["group"]) in exclude:
                 count += 1
                 if len(examples) < 5:
                     examples.append(record["group"])
-        report[name] = {"samples_in_family": count, "examples": examples}
+        report[name] = {"samples_excluded_from_pretrain": count, "examples": examples}
 
 
 def audit_global_feat(sources: dict, report: dict) -> None:
@@ -266,9 +266,9 @@ def main() -> int:
     print("[3/5] batio3", flush=True)
     report["batio3"] = {}
     audit_batio3(sources["batio3"], report["batio3"])
-    print("[4/5] family overlap", flush=True)
-    report["family"] = {}
-    audit_family(sources, report["family"])
+    print("[4/5] pretrain exclude overlap", flush=True)
+    report["pretrain_exclude"] = {}
+    audit_pretrain_exclude(sources, report["pretrain_exclude"])
     print("[5/5] global_feat coverage", flush=True)
     report["global_feat"] = {}
     audit_global_feat(sources, report["global_feat"])

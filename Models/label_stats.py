@@ -24,7 +24,8 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from common import REPO_ROOT, load_config
-from data import GRAPH_TARGETS, GLOBAL_FEATURE_COLUMNS, SampleFilter, Source, load_family_groups
+from data import (GRAPH_TARGETS, GLOBAL_FEATURE_COLUMNS, SampleFilter, Source,
+                  load_pretrain_exclude_groups)
 
 MODELS_DIR = Path(__file__).resolve().parent
 
@@ -45,8 +46,8 @@ def main() -> int:
         print(f"警告: 建议使用预训练配置统计（当前 stage={cfg.get('stage')}）")
     split_cfg = cfg.get("split") or {"val_frac": 0.0, "test_frac": 0.0, "seed": 0}
 
-    family = load_family_groups() if cfg.get("exclude_family", True) else set()
-    print(f"[family] 待剔除家族组成 {len(family)} 个")
+    exclude_groups = load_pretrain_exclude_groups() if cfg.get("exclude_family", True) else set()
+    print(f"[pretrain 排除] 微调留出组成 {len(exclude_groups)} 个（仅 val/test，其余家族数据回流）")
 
     common_filters = cfg.get("filters") or {}
     sources: dict[str, Source] = {}
@@ -61,10 +62,11 @@ def main() -> int:
             perovskite_batio3=bool(filters_cfg.get("perovskite_batio3", False)),
             exclude_formulas=tuple(filters_cfg.get("exclude_formulas") or ()),
         )
-        source = Source(name, split_cfg, filters=filters, exclude_groups=family, limit_shards=args.limit_shards)
+        source = Source(name, split_cfg, filters=filters, exclude_groups=exclude_groups,
+                        limit_shards=args.limit_shards)
         sources[name] = source
         print(f"[source] {name:26s} train={source.counts['train']:7d} "
-              f"家族剔除={source.n_family:6d} 过滤={source.n_filtered:6d}")
+              f"预训练排除={source.n_family:6d} 过滤={source.n_filtered:6d}")
 
     acc = {name: {"count": 0, "sum": 0.0, "sumsq": 0.0,
                   "loss_count": 0, "loss_sum": 0.0, "metal_count": 0} for name in GRAPH_TARGETS}
@@ -180,7 +182,7 @@ def main() -> int:
         record = {"mean": mean, "std": std, "n": entry["count"], "loss_n": entry["loss_count"],
                   "loss_mean_z": (loss_mean - mean) / std}
         if name == "gap":
-            record["metal_frac"] = entry["metal_count"] / entry["count"]
+            record["metal_frac"] = entry["metal_count"] / max(entry["count"] + entry["metal_count"], 1)
         targets_out[name] = record
     targets_out["vacancy"] = vacancy_record
 
@@ -191,7 +193,7 @@ def main() -> int:
             "config": str(Path(args.config)),
             "split": "train",
             "exclude_family": bool(cfg.get("exclude_family", True)),
-            "family_groups": len(family),
+            "pretrain_exclude_groups": len(exclude_groups),
             "vacancy_shards": args.vacancy_shards,
             "limit_shards": args.limit_shards,
         },

@@ -1,0 +1,7 @@
+base: Models/configs/pretrain.yaml
+paths:
+  out_dir: Models/artifacts/pretrain_metal
+model:
+  use_metal: true
+train:
+  max_epochs: 20

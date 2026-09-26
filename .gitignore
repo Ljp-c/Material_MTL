@@ -20,6 +20,7 @@ specific_MT/runs/
 specific_MT/logs/
 specific_MT/checkpoints/
 specific_MT/outputs/
+Models/artifacts/
 
 # Python 缓存
 __pycache__/

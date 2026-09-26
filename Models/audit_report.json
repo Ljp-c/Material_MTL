@@ -212,20 +212,20 @@
     "debye_temperature_coverage": 15,
     "num_magnetic_sites_coverage": 153
   },
-  "family": {
-    "family_groups_total": 6118,
+  "pretrain_exclude": {
+    "exclude_groups_total": 2035,
     "formation_energy_band_gap": {
-      "samples_in_family": 8207,
+      "samples_excluded_from_pretrain": 3041,
       "examples": [
         "BaCaTi4O8",
         "Ba2YTi3O8",
-        "BaTi4O8",
         "Ba2YTi3O7",
-        "Ba2Ti3AlO7"
+        "Ba2Ti3AlO7",
+        "BaTi4AlO7"
       ]
     },
     "vacancy_screening": {
-      "samples_in_family": 8269,
+      "samples_excluded_from_pretrain": 3055,
       "examples": [
         "Ba27",
         "Ba64",
@@ -235,23 +235,23 @@
       ]
     },
     "batio3": {
-      "samples_in_family": 145,
+      "samples_excluded_from_pretrain": 92,
       "examples": [
         "BaCaTi4O8",
         "Ba2YTi3O8",
-        "BaTi4O8",
         "Ba2YTi3O7",
-        "Ba2Ti3AlO7"
+        "Ba2Ti3AlO7",
+        "BaTi4AlO7"
       ]
     },
     "batio3_doped": {
-      "samples_in_family": 244,
+      "samples_excluded_from_pretrain": 162,
       "examples": [
         "Ba2La4Ti5O18",
         "Ba6Nd2Ti4O17",
-        "BaSr7Ti8O24",
         "Ba2MgTiO4",
-        "BaMgTiO3"
+        "BaMgTiO3",
+        "Ba2MgTi2O6"
       ]
     }
   },

@@ -1,0 +1,7 @@
+base: Models/configs/pretrain.yaml
+paths:
+  out_dir: Models/artifacts/pretrain_cont
+train:
+  max_epochs: 20
+  min_lr_ratio: 0.02
+  early_stop_patience: 20

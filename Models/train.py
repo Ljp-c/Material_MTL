@@ -23,8 +23,9 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import file_digest, load_config, resolve_path, seed_everything
-from data import GRAPH_TARGETS, MultiSourceBatcher, SampleFilter, Source, collate, load_family_groups
+from common import file_digest, load_config, load_torch, resolve_path, seed_everything
+from data import (GRAPH_TARGETS, MultiSourceBatcher, SampleFilter, Source, collate,
+                  load_pretrain_exclude_groups)
 from losses import MultiTaskLoss
 from metrics import format_metric, regression_metrics
 from model import MultiTaskModel
@@ -43,18 +44,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tag", default="", help="输出目录后缀（区分多次实验）")
     parser.add_argument("--seed", type=int, default=None, help="覆盖配置中的随机种子（多种子集成）")
     parser.add_argument("--dropout", type=float, default=None, help="覆盖模型 dropout（拟合测试 / 正则扫描）")
+    parser.add_argument("--resume", action="store_true",
+                        help="从 out_dir/last.pt（或 --ckpt）续训：恢复权重/优化器/调度器/epoch")
+    parser.add_argument("--prefetch-depth", type=int, default=None,
+                        help="分片预读深度（0=关闭；默认取配置 train.prefetch_depth）")
+    parser.add_argument("--val-every-steps", type=int, default=None,
+                        help="每 N 步做一次验证并写入 metrics.csv（0=关闭；默认取配置 train.val_every_steps）")
     return parser.parse_args()
 
 
-def build_sources(cfg: dict, limit_shards: int | None, label_stats: dict | None = None) -> list[Source]:
-    family = load_family_groups() if cfg.get("exclude_family") else set()
-    if family:
-        print(f"[family] 家族组成 {len(family)} 个（batio3 / batio3_doped / 含 Ba 的 vacancy 组成）")
+def build_sources(cfg: dict, limit_shards: int | None, label_stats: dict | None = None,
+                  stats_hash: str | None = None) -> list[Source]:
+    exclude_groups = load_pretrain_exclude_groups() if cfg.get("exclude_family") else set()
+    if exclude_groups:
+        print(f"[pretrain 排除] 微调留出组成 {len(exclude_groups)} 个"
+              "（仅微调 val/test；其余家族数据回流预训练）")
     global_stats = (label_stats or {}).get("global_feat")
     require_global = int(((cfg.get("model") or {}).get("global_dim", 0)) or 0) > 0
     if require_global and not global_stats:
         raise SystemExit("配置 global_dim>0，但 label_stats 缺 global_feat 统计；请重新运行 label_stats.py")
     common_filters = cfg.get("filters") or {}
+    prefetch_depth = int((cfg.get("train") or {}).get("prefetch_depth", 0) or 0)
     sources = []
     for entry in cfg.get("sources") or []:
         name = entry["name"]
@@ -67,13 +77,15 @@ def build_sources(cfg: dict, limit_shards: int | None, label_stats: dict | None 
             perovskite_batio3=bool(filters_cfg.get("perovskite_batio3", False)),
             exclude_formulas=tuple(filters_cfg.get("exclude_formulas") or ()),
         )
-        source = Source(name, cfg["split"], filters=filters, exclude_groups=family, limit_shards=limit_shards,
-                        global_stats=global_stats, require_global=require_global)
+        subset_cache = bool(entry.get("subset_cache", False))
+        source = Source(name, cfg["split"], filters=filters, exclude_groups=exclude_groups,
+                        limit_shards=limit_shards, global_stats=global_stats, require_global=require_global,
+                        subset_cache=subset_cache, stats_hash=stats_hash, prefetch_depth=prefetch_depth)
         sources.append(source)
         print(f"[source] {name:26s} train={source.counts['train']:7d} val={source.counts['val']:6d} "
               f"test={source.counts['test']:6d} excluded={source.counts['excluded']:6d} "
-              f"(家族 {source.n_family} / 过滤 {source.n_filtered} / 全局缺失 {source.n_global_missing}) "
-              f"shards={source.n_shards}")
+              f"(预训练排除 {source.n_family} / 过滤 {source.n_filtered} / 全局缺失 {source.n_global_missing} / "
+              f"子集缓存 {'开' if source.subset_cache else '关'}) shards={source.n_shards}")
     return sources
 
 
@@ -141,7 +153,8 @@ def make_scheduler(optimizer, total_steps: int, warmup_frac: float, min_lr_ratio
     return torch.optim.lr_scheduler.LambdaLR(optimizer, schedule)
 
 
-def save_checkpoint(path: Path, model, model_cfg, stage, epoch, global_step, stats_path, stats_hash, val) -> None:
+def save_checkpoint(path: Path, model, model_cfg, stage, epoch, global_step, stats_path, stats_hash, val,
+                    optimizer=None, scheduler=None, run_state=None) -> None:
     payload = {
         "model_state": model.state_dict(),
         "model_config": model_cfg,
@@ -152,6 +165,12 @@ def save_checkpoint(path: Path, model, model_cfg, stage, epoch, global_step, sta
         "stats_hash": stats_hash,
         "val": val,
     }
+    if optimizer is not None:
+        payload["optimizer_state"] = optimizer.state_dict()
+    if scheduler is not None:
+        payload["scheduler_state"] = scheduler.state_dict()
+    if run_state is not None:
+        payload["run_state"] = run_state
     torch.save(payload, path)
 
 
@@ -243,6 +262,8 @@ def main() -> int:
         cfg["seed"] = int(args.seed)
     if args.dropout is not None:
         cfg.setdefault("model", {})["dropout"] = float(args.dropout)
+    if args.prefetch_depth is not None:
+        cfg.setdefault("train", {})["prefetch_depth"] = int(args.prefetch_depth)
     stage = str(cfg.get("stage", "pretrain"))
     seed = int(cfg.get("seed", 42))
     seed_everything(seed)
@@ -265,7 +286,7 @@ def main() -> int:
     print(f"[stats] {stats_path} (md5 {stats_hash[:8]})")
 
     print(f"[config] {args.config} stage={stage} device={device} out={out_dir}")
-    sources = build_sources(cfg, args.limit_shards, stats)
+    sources = build_sources(cfg, args.limit_shards, stats, stats_hash=stats_hash)
     train_cfg = dict(cfg.get("train") or {})
     batcher = MultiSourceBatcher(
         sources,
@@ -273,19 +294,34 @@ def main() -> int:
         weights=(cfg.get("sampling_weights") or {}),
         sampling=str(cfg.get("sampling", "sqrt_inv")),
         seed=seed,
+        max_atoms_per_batch=train_cfg.get("max_atoms_per_batch"),
     )
 
-    init_value = args.ckpt or cfg.get("init_from")
-    init_path = resolve_path(init_value)
+    resume_state = None
+    start_epoch = 0
     checkpoint = None
-    if init_path is not None:
-        if not init_path.exists():
-            raise SystemExit(f"找不到权重文件 {init_path}")
-        checkpoint = torch.load(init_path, map_location="cpu", weights_only=True)
-        if stage == "finetune" and checkpoint.get("stats_hash") and checkpoint["stats_hash"] != stats_hash \
-                and not cfg.get("allow_stats_change"):
-            raise SystemExit("微调必须与预训练共用同一份 label_stats（当前统计与 checkpoint 记录不一致）")
-        print(f"[load] {init_path}")
+    if args.resume:
+        resume_path = resolve_path(args.ckpt) if args.ckpt else out_dir / "last.pt"
+        if resume_path is None or not resume_path.exists():
+            raise SystemExit(f"--resume 找不到 checkpoint：{resume_path}")
+        checkpoint = load_torch(resume_path)
+        start_epoch = int(checkpoint.get("epoch", -1)) + 1
+        resume_state = checkpoint.get("run_state") or {}
+        print(f"[resume] {resume_path} | 已完成 epoch {checkpoint.get('epoch')} / "
+              f"global_step {checkpoint.get('global_step')} | 从 epoch {start_epoch} 继续")
+        if args.limit_shards:
+            print("[resume] 警告: --limit-shards 会改变数据流，续训与原始 run 不完全可比")
+    else:
+        init_value = args.ckpt or cfg.get("init_from")
+        init_path = resolve_path(init_value)
+        if init_path is not None:
+            if not init_path.exists():
+                raise SystemExit(f"找不到权重文件 {init_path}")
+            checkpoint = load_torch(init_path)
+            if stage == "finetune" and checkpoint.get("stats_hash") and checkpoint["stats_hash"] != stats_hash \
+                    and not cfg.get("allow_stats_change"):
+                raise SystemExit("微调必须与预训练共用同一份 label_stats（当前统计与 checkpoint 记录不一致）")
+            print(f"[load] {init_path}")
 
     model, model_cfg = build_model(cfg, stats, checkpoint)
     model = model.to(device)
@@ -317,6 +353,9 @@ def main() -> int:
     if steps_per_epoch <= 0:
         raise SystemExit("训练集为空：检查 split / filters / --limit-shards")
     max_epochs = int(train_cfg.get("max_epochs", 20))
+    if args.resume and start_epoch >= max_epochs:
+        print(f"[resume] 已完成 {start_epoch}/{max_epochs} 个 epoch，无需续训")
+        return 0
     total_steps = max(1, steps_per_epoch * max_epochs)
     warmup_frac = float(train_cfg.get("warmup_frac", 0.05))
     min_lr_ratio = float(train_cfg.get("min_lr_ratio", 0.05))
@@ -324,7 +363,13 @@ def main() -> int:
     log_every = int(train_cfg.get("log_every_steps", 50))
     patience = int(train_cfg.get("early_stop_patience", 50))
     val_max_batches = train_cfg.get("val_max_batches")
-    print(f"[plan] steps/epoch={steps_per_epoch} max_epochs={max_epochs} total_steps={total_steps}")
+    atoms_cap = train_cfg.get("max_atoms_per_batch")
+    prefetch_depth = int(train_cfg.get("prefetch_depth", 0) or 0)
+    val_every_steps = int(args.val_every_steps) if args.val_every_steps is not None \
+        else int(train_cfg.get("val_every_steps", 0) or 0)
+    print(f"[plan] start_epoch={start_epoch} steps/epoch={steps_per_epoch} max_epochs={max_epochs} "
+          f"total_steps={total_steps} batch≤{int(train_cfg.get('batch_size', 64))} 样本 / "
+          f"≤{int(atoms_cap) if atoms_cap else '∞'} 原子 prefetch={prefetch_depth} val_every={val_every_steps}")
 
     freeze_cfg = dict(train_cfg.get("freeze") or {})
     freeze_epochs = int(freeze_cfg.get("freeze_epochs", 0)) if stage == "finetune" else 0
@@ -335,17 +380,32 @@ def main() -> int:
             return 0 if epoch < freeze_epochs else unfreeze_blocks
         return None
 
-    def phase_steps(epoch: int) -> int:
-        if stage == "finetune" and freeze_epochs > 0 and epoch < freeze_epochs:
-            remaining = min(freeze_epochs, max_epochs) - epoch
+    def phase_total_steps(epoch: int) -> int:
+        if stage == "finetune" and freeze_epochs > 0:
+            if epoch < min(freeze_epochs, max_epochs):
+                span = min(freeze_epochs, max_epochs)
+            else:
+                span = max_epochs - min(freeze_epochs, max_epochs)
         else:
-            remaining = max_epochs - epoch
-        return max(1, remaining * steps_per_epoch)
+            span = max_epochs
+        return max(1, span * steps_per_epoch)
 
-    phase = phase_of(0)
+    phase = phase_of(start_epoch)
     set_backbone_trainable(model, phase)
     optimizer = make_optimizer(model, train_cfg)
-    scheduler = make_scheduler(optimizer, phase_steps(0), warmup_frac, min_lr_ratio)
+    scheduler = make_scheduler(optimizer, phase_total_steps(start_epoch), warmup_frac, min_lr_ratio)
+    if resume_state and checkpoint.get("optimizer_state") is not None:
+        saved_groups = len(checkpoint["optimizer_state"].get("param_groups", []))
+        if saved_groups == len(optimizer.param_groups):
+            optimizer.load_state_dict(checkpoint["optimizer_state"])
+            if checkpoint.get("scheduler_state") is not None:
+                scheduler.load_state_dict(checkpoint["scheduler_state"])
+            print("[resume] 优化器/调度器状态已恢复")
+        else:
+            print(f"[resume] 优化器分组数变化（保存 {saved_groups} vs 当前 {len(optimizer.param_groups)}），"
+                  "本阶段优化器从头开始（与正常阶段切换一致）")
+    elif resume_state:
+        print("[resume] checkpoint 不含优化器状态（旧格式），已恢复权重与轮数")
     lr_text = " | ".join(f"{group['name']} lr={group['lr']}" for group in optimizer.param_groups)
     print(f"[train] backbone 可训练块={phase if phase is not None else 'all'} | {lr_text}")
 
@@ -355,18 +415,31 @@ def main() -> int:
     loss_file = open(out_dir / "losses.csv", "w", newline="", encoding="utf-8")
     loss_writer = csv.writer(loss_file)
     loss_writer.writerow(["epoch", "step", "split", "term", "value", "share"])
+    step_file = open(out_dir / "step_log.csv", "w", newline="", encoding="utf-8")
+    step_writer = csv.writer(step_file)
+    step_writer.writerow(["timestamp", "stage", "epoch", "step", "step_per_sec", "loss",
+                          "formation", "gap", "cbm", "vbm", "vacancy", "consistency"])
+    epoch_file = open(out_dir / "epoch_log.csv", "w", newline="", encoding="utf-8")
+    epoch_writer = csv.writer(epoch_file)
+    epoch_writer.writerow(["timestamp", "stage", "epoch", "step", "epoch_sec", "step_per_sec", "loss",
+                           "formation", "gap", "cbm", "vbm", "vacancy", "consistency"])
 
     best_value = float("inf")
     bad_evals = 0
     global_step = 0
+    if args.resume:
+        if resume_state:
+            best_value = float(resume_state.get("best_value", float("inf")))
+            bad_evals = int(resume_state.get("bad_evals", 0))
+        global_step = int(checkpoint.get("global_step", 0))
 
-    for epoch in range(max_epochs):
+    for epoch in range(start_epoch, max_epochs):
         new_phase = phase_of(epoch)
         if new_phase != phase:
             phase = new_phase
             set_backbone_trainable(model, phase)
             optimizer = make_optimizer(model, train_cfg)
-            scheduler = make_scheduler(optimizer, phase_steps(epoch), warmup_frac, min_lr_ratio)
+            scheduler = make_scheduler(optimizer, phase_total_steps(epoch), warmup_frac, min_lr_ratio)
             lr_text = " | ".join(f"{group['name']} lr={group['lr']}" for group in optimizer.param_groups)
             print(f"[phase] epoch {epoch}: backbone 可训练块={phase} | {lr_text}")
 
@@ -377,6 +450,8 @@ def main() -> int:
         steps_done = 0
         reached_limit = False
         last_log_time = time.time()
+        epoch_start = time.time()
+        last_step_time = time.time()
         for source_name, items in batcher.epoch_batches(epoch):
             batch = collate(items).to(device)
             total, info = criterion(model(batch), batch.labels, batch.vacancy, global_step, total_steps)
@@ -391,23 +466,51 @@ def main() -> int:
             scheduler.step()
             global_step += 1
             steps_done += 1
-            run_loss += float(total.detach())
-            for name, value in info["weighted"].items():
-                run_terms[name] += float(value.detach())
+            now = time.time()
+            step_speed = 1.0 / max(now - last_step_time, 1e-6)
+            last_step_time = now
+            step_loss = float(total.detach())
+            step_terms = {name: float(value.detach()) for name, value in info["weighted"].items()}
+            run_loss += step_loss
+            for name, value in step_terms.items():
+                run_terms[name] += value
                 run_term_counts[name] += 1
+            step_writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), stage, epoch, global_step,
+                                  f"{step_speed:.4f}", f"{step_loss:.6f}",
+                                  *[f"{step_terms[name]:.6f}" if name in step_terms else ""
+                                    for name in ("formation", "gap", "cbm", "vbm", "vacancy", "consistency")]])
+            step_file.flush()
             if log_every and global_step % log_every == 0:
-                now = time.time()
                 speed = log_every / max(now - last_log_time, 1e-6)
                 last_log_time = now
-                mean_terms = " ".join(
-                    f"{name}={run_terms[name] / run_term_counts[name]:.4f}" for name in sorted(run_terms))
+                mean_values = {name: run_terms[name] / run_term_counts[name] for name in run_terms}
+                mean_loss = run_loss / max(1, steps_done)
+                mean_terms = " ".join(f"{name}={mean_values[name]:.4f}" for name in sorted(mean_values))
                 print(f"[{stage}] epoch {epoch:3d} step {global_step:7d} "
-                      f"loss {run_loss / max(1, steps_done):.4f} | {speed:.1f} step/s | {mean_terms}")
+                      f"loss {mean_loss:.4f} | {speed:.1f} step/s | {mean_terms}")
             if args.max_steps and global_step >= args.max_steps:
                 reached_limit = True
                 break
+            if val_every_steps > 0 and global_step % val_every_steps == 0:
+                mid = evaluate(model, criterion, batcher, device, "val", max_batches=val_max_batches)
+                print_eval(f"val step {global_step}", mid)
+                write_eval_rows(metric_writer, loss_writer, epoch, global_step, "val", mid)
+                metric_file.flush()
+                loss_file.flush()
         if steps_done == 0:
             print("[warn] 本 epoch 没有可用批次")
+
+        epoch_seconds = time.time() - epoch_start
+        epoch_speed = steps_done / max(epoch_seconds, 1e-6)
+        epoch_loss = run_loss / max(1, steps_done)
+        epoch_values = {name: run_terms[name] / run_term_counts[name] for name in run_terms}
+        epoch_writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), stage, epoch, global_step,
+                               f"{epoch_seconds:.1f}", f"{epoch_speed:.4f}", f"{epoch_loss:.6f}",
+                               *[f"{epoch_values[name]:.6f}" if name in epoch_values else ""
+                                 for name in ("formation", "gap", "cbm", "vbm", "vacancy", "consistency")]])
+        epoch_file.flush()
+        print(f"[{stage}] epoch {epoch:3d} 汇总: loss {epoch_loss:.4f} | {epoch_speed:.1f} step/s "
+              f"| {epoch_seconds / 60:.1f} min")
 
         result = evaluate(model, criterion, batcher, device, "val", max_batches=val_max_batches)
         print_eval(f"val epoch {epoch}（step {global_step}）", result)
@@ -424,7 +527,9 @@ def main() -> int:
         else:
             bad_evals += 1
         save_checkpoint(out_dir / "last.pt", model, model_cfg, stage, epoch, global_step,
-                        stats_path, stats_hash, result["overall"])
+                        stats_path, stats_hash, result["overall"],
+                        optimizer=optimizer, scheduler=scheduler,
+                        run_state={"best_value": best_value, "bad_evals": bad_evals})
 
         if reached_limit:
             print(f"[stop] 达到 --max-steps ({global_step})")
@@ -435,11 +540,13 @@ def main() -> int:
 
     metric_file.close()
     loss_file.close()
+    step_file.close()
+    epoch_file.close()
 
     if any(source.count("test") > 0 for source in sources):
         best_path = out_dir / "best.pt"
         if best_path.exists():
-            payload = torch.load(best_path, map_location="cpu", weights_only=True)
+            payload = load_torch(best_path)
             model.load_state_dict(payload["model_state"], strict=False)
             model = model.to(device)
         result = evaluate(model, criterion, batcher, device, "test", max_batches=None)
@@ -447,6 +554,20 @@ def main() -> int:
         with open(out_dir / "test_metrics.json", "w", encoding="utf-8") as fh:
             json.dump({"pairs": result["pairs"], "overall": result["overall"], "loss": result["loss"]},
                       fh, indent=2, ensure_ascii=False)
+    try:
+        from plot_run import plot_run
+        for path in plot_run(out_dir):
+            print(f"[plot] {path}")
+    except Exception as exc:
+        print(f"[plot] 跳过绘图: {type(exc).__name__}: {exc}")
+    try:
+        import plot_run
+        picture_dir = Path(__file__).resolve().parent / "artifacts" / "pictures" / out_dir.name
+        saved = plot_run.plot_runs([(out_dir.name, out_dir)], picture_dir)
+        if saved:
+            print(f"[plots] {picture_dir}")
+    except Exception as exc:
+        print(f"[plots] 跳过: {type(exc).__name__}: {exc}")
     print(f"[out] {out_dir}")
     return 0
 
